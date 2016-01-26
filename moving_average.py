@@ -171,13 +171,34 @@ class StockData(object):
         self.data[symbol + '_recent_max'] = pd.Series(self.recent_max_list,index=self.data.index)
         self.data[symbol + '_recent_max_minus_mrange'] = self.data[symbol + '_recent_max'] - self.data[symbol + '_mrange']
 
-        self.order_history_symbol = symbol
-        self.order_history = pd.DataFrame(order_history, columns=['Purchase Date','Purchase Price','Sell Date','Sell Price','Stop Loss'])
-        self.order_history['Profit_Loss_share'] = self.order_history['Sell Price'] - self.order_history['Purchase Price']
-        self.order_history['Risk'] = self.order_history['Purchase Price'] - self.order_history['Stop Loss']
-        self.order_history['Rmultiple'] = self.order_history['Profit_Loss_share'] / self.order_history['Risk']
+        order_history_df = pd.DataFrame(order_history, columns=['Purchase Date','Purchase Price','Sell Date','Sell Price','Stop Loss'])
+        order_history_df['Symbol'] = symbol
+        order_history_df['Profit_Loss_share'] = order_history_df['Sell Price'] - order_history_df['Purchase Price']
+        order_history_df['Risk'] = order_history_df['Purchase Price'] - order_history_df['Stop Loss']
+        order_history_df['Rmultiple'] = order_history_df['Profit_Loss_share'] / order_history_df['Risk']
+        if hasattr(self,'order_history'):
+            self.order_history = pd.concat([self.order_history, order_history_df],ignore_index=True)
+        else:
+            self.order_history = order_history_df
 
+    def calc_factors_trade(self, symbol='MMM'):
+        self.calc_ma_stats(symbol, self.settings['near_ma'], self.settings['far_ma'])
+        self.calc_ewma(symbol)
+        self.calc_ewma_residuals(symbol)
+        output2 = self.calc_moving_range(symbol)
+        self.trade(symbol, self.settings['near_ma'], self.settings['far_ma'])  # Updates order history
 
+    def backtest(self, symbol_list=['MMM','ACT'], near_ma=10, far_ma=90, save=False):
+        self.settings = {'near_ma': near_ma, 'far_ma': far_ma}
+        for symbol in symbol_list:
+            print("BackTesting " + symbol)
+            self.calc_factors_trade(symbol)
+        if save:
+            try:
+                self.order_history.to_csv('Order_History.csv')  # Add numbering
+            except IOError:
+                print("IOError: Order History Not saved.")
+        return self.calc_score()
 
     def show_symbol_columns(self,symbol='MMM'):
 
@@ -185,16 +206,60 @@ class StockData(object):
             if symbol in col:
                 print(col)
 
+    def plot_results(self, symbol_list):
+        near_ma = self.settings['near_ma']
+        far_ma = self.settings['far_ma']
+        # ax = self.data[[symbol, symbol + '_minus_ewma_res',symbol + '_recent_max', symbol + '_stop_loss']].plot()
+        for symbol in symbol_list:
+            print("Plotting for " + symbol)
+            ax = self.data[[symbol, symbol + '_ma_' + str(near_ma),
+                            symbol + '_ma_' + str(far_ma), symbol + '_stop_loss']].plot()
+            symbol_order_history = self.order_history[self.order_history['Symbol']==symbol]
+            for i in range(symbol_order_history.shape[0]):
+                ax.axvline(symbol_order_history['Purchase Date'][i], color='red', linewidth=2)
+                ax.axvline(symbol_order_history['Sell Date'][i], color='green', linewidth=2)
+            # fig = plt.figure()
+            if symbol_order_history.shape[0] >= 0:  # Need to have at least one row
+                plt.hist(symbol_order_history['Rmultiple'])
+
+
+    def calc_score(self):
+        # symbol = self.sd.order_history_symbol
+        expectancy = self.order_history['Rmultiple'].mean()
+        RstdDev = self.order_history['Rmultiple'].std()
+        SQN = expectancy / RstdDev
+        scoresNumbers = list(map(lambda x: round(x, 3), [expectancy, RstdDev, SQN]))
+
+        near_ma = self.settings['near_ma']
+        far_ma = self.settings['far_ma']
+        scores = [symbol_list, near_ma, far_ma, scoresNumbers[0], scoresNumbers[1], scoresNumbers[2]]
+        columns = ['Symbols', 'near_ma', 'far_ma', 'Expectancy', 'R-StdDev', 'SQN']
+        a = zip(columns, scores)
+        # scoresDict = {}
+        # for i in range(len(columns)):
+        #    scoresDict[columns[i]] = scores[i]
+        scoresDict = {k: v for k, v in a}
+        self.score = pd.DataFrame(data=scoresDict, index=[0])
+        return self.score
+
 if __name__ == "__main__":
 
     sd = StockData()
+    symbol_list = sd.data.sample(50,axis=1).columns   # Take a random sample of x stocks to run the system on
+    sd.backtest(symbol_list,10,60,save=True)
+    sd.plot_results(symbol_list[[2,5,8,10]])
+
+    plt.hist(sd.order_history['Rmultiple'])
+
+    print(sd.score)
+
     #myStockData.graph_data()
-    sd.calc_ewma()
+    #sd.calc_ewma()
     #myStockData.data[['MMM','MMM_ewma']].plot()
-    sd.calc_ewma_residuals()
+    #sd.calc_ewma_residuals()
     #myStockData.data['MMM_ewma_res'].plot()
 
-    output2 = sd.calc_moving_range()
+    #output2 = sd.calc_moving_range()
 
 #    col_names = ['MMM']
 #    for i in range(10,100,10):
@@ -202,16 +267,16 @@ if __name__ == "__main__":
 #        col_names.append('MMM_ma_'+str(i))
 #    sd.data[col_names].plot()
     #sd.plot_crossovers()
-    sd.calc_ma_stats()
+    #sd.calc_ma_stats()
 
-    sd.trade()
-    print(sd.order_history)
-    ax = sd.data[['MMM', 'MMM_minus_ewma_res','MMM_recent_max','MMM_stop_loss']].plot()
+    #sd.trade()
+
+    #ax = sd.data[['MMM', 'MMM_minus_ewma_res','MMM_recent_max','MMM_stop_loss']].plot()
     #ax = sd.data[['MMM', 'MMM_ma_20', 'MMM_ma_60']].plot()
-    for i in range(sd.order_history.shape[0]):
-        ax.axvline(sd.order_history['Purchase Date'][i], color='red', linewidth=2)
-        ax.axvline(sd.order_history['Sell Date'][i], color='green',linewidth=2)
-    plt.hist(sd.order_history['Rmultiple'])
+    #for i in range(sd.order_history.shape[0]):
+    #    ax.axvline(sd.order_history['Purchase Date'][i], color='red', linewidth=2)
+    #    ax.axvline(sd.order_history['Sell Date'][i], color='green',linewidth=2)
+    #plt.hist(sd.order_history['Rmultiple'])
 
     # Thoughts:
          # Write algo to optimize all the settings (Stop Loss point, Moving Average Cross overs)
