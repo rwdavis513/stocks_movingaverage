@@ -189,6 +189,7 @@ class StockData(object):
         self.trade(symbol, self.settings['near_ma'], self.settings['far_ma'])  # Updates order history
 
     def backtest(self, symbol_list=['MMM','ACT'], near_ma=10, far_ma=90, save=False):
+        self.symbol_list = symbol_list
         self.settings = {'near_ma': near_ma, 'far_ma': far_ma}
         for symbol in symbol_list:
             print("BackTesting " + symbol)
@@ -201,12 +202,12 @@ class StockData(object):
         return self.calc_score()
 
     def show_symbol_columns(self,symbol='MMM'):
-
         for col in self.data.columns:
             if symbol in col:
                 print(col)
 
     def plot_results(self, symbol_list):
+
         near_ma = self.settings['near_ma']
         far_ma = self.settings['far_ma']
         # ax = self.data[[symbol, symbol + '_minus_ewma_res',symbol + '_recent_max', symbol + '_stop_loss']].plot()
@@ -215,16 +216,20 @@ class StockData(object):
             ax = self.data[[symbol, symbol + '_ma_' + str(near_ma),
                             symbol + '_ma_' + str(far_ma), symbol + '_stop_loss']].plot()
             symbol_order_history = self.order_history[self.order_history['Symbol']==symbol]
-            for i in range(symbol_order_history.shape[0]):
-                ax.axvline(symbol_order_history['Purchase Date'][i], color='red', linewidth=2)
-                ax.axvline(symbol_order_history['Sell Date'][i], color='green', linewidth=2)
+            for row in symbol_order_history.iterrows():
+                try:
+                    ax.axvline(row[1]['Purchase Date'], color='red', linewidth=2)
+                    ax.axvline(row[1]['Sell Date'], color='green', linewidth=2)
+                except KeyError:
+                    print("KeyError: No entries found for item.")
+                    print(symbol_order_history)
+
             # fig = plt.figure()
-            if symbol_order_history.shape[0] >= 0:  # Need to have at least one row
-                plt.hist(symbol_order_history['Rmultiple'])
 
-
-    def calc_score(self):
+    def calc_score(self,plot_histo=True):
         # symbol = self.sd.order_history_symbol
+        if plot_histo and self.order_history.shape[0] >= 0:  # Need to have at least one row
+            plt.hist(self.symbol_order_history['Rmultiple'])
         expectancy = self.order_history['Rmultiple'].mean()
         RstdDev = self.order_history['Rmultiple'].std()
         SQN = expectancy / RstdDev
@@ -232,7 +237,7 @@ class StockData(object):
 
         near_ma = self.settings['near_ma']
         far_ma = self.settings['far_ma']
-        scores = [symbol_list, near_ma, far_ma, scoresNumbers[0], scoresNumbers[1], scoresNumbers[2]]
+        scores = ['-'.join(self.symbol_list), near_ma, far_ma, scoresNumbers[0], scoresNumbers[1], scoresNumbers[2]]
         columns = ['Symbols', 'near_ma', 'far_ma', 'Expectancy', 'R-StdDev', 'SQN']
         a = zip(columns, scores)
         # scoresDict = {}
@@ -245,10 +250,9 @@ class StockData(object):
 if __name__ == "__main__":
 
     sd = StockData()
-    symbol_list = sd.data.sample(50,axis=1).columns   # Take a random sample of x stocks to run the system on
+    symbol_list = sd.data.sample(5,axis=1).columns   # Take a random sample of x stocks to run the system on
     sd.backtest(symbol_list,10,60,save=True)
-    sd.plot_results(symbol_list[[2,5,8,10]])
-
+    #sd.plot_results(symbol_list[[1,4]])
     plt.hist(sd.order_history['Rmultiple'])
 
     print(sd.score)
