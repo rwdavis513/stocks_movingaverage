@@ -3,12 +3,15 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
+from portfolio import Portfolio
 
 class StockData(object):
+# I need to re-factor this code.
 
     def __init__(self,stockdata_csv='rawdata/csv/allStocks.csv'):
         self.data = pd.read_csv(stockdata_csv, index_col=0)
         self.data.set_index(pd.to_datetime(self.data.index), inplace=True)
+        self.portfolio = Portfolio(100000, pct_equity_risk=0.01)
 
     def graph_data(self,symbol='MMM'):
         fig = plt.figure()
@@ -131,7 +134,6 @@ class StockData(object):
                 recent_max = self.data[symbol][i]
 
             if not holding_stock:
-
                 if entry_criteria and not np.isnan(self.data[symbol][i]):
                     holding_stock = True
                     purchase_price = self.data[symbol][i]
@@ -140,8 +142,9 @@ class StockData(object):
                     delta_to_max = np.std(self.data[symbol + '_ewma_res'][i-50:i])*3
                     initial_stop_loss = purchase_price - delta_to_max    # initial stop loss is minus_ewma_res
                     self.stop_loss_list.append(initial_stop_loss)
-
+                    self.portfolio.buy_stock(symbol,purchase_price, initial_stop_loss)
                     entry_criteria = False
+                    print(self.portfolio.current_holdings)
                     #print("PURCHASE: "+ purchase_date.strftime('%m/%d/%y') + "   " + str(purchase_price))
                 else:
                     self.stop_loss_list.append(np.nan)
@@ -159,19 +162,22 @@ class StockData(object):
                     holding_stock = False   #SELL!
                     sell_price = self.data[symbol][i]
                     sell_date = self.data.index[i]
-                    order_history.append((purchase_date, purchase_price, sell_date, sell_price, initial_stop_loss))
+                    num_shares = self.portfolio.current_holdings[symbol]
+                    self.portfolio.sell_stock(symbol, sell_price)
+                    order_history.append((purchase_date, purchase_price, sell_date, sell_price, initial_stop_loss, num_shares, self.portfolio.cash_equity))
                     #print("       SELL: " + sell_date.strftime('%m/%d/%y') + "   Price:" + str(sell_price) + "   MAX:" + str(recent_max) + "  Range:" + str(self.data[symbol + '_mrange'][i]) + "  Delta:" + str(recent_max - self.data[symbol + '_mrange'][i]))
                     purchase_price = np.nan
                     sell_price = np.nan
-                    #recent_max = np.nan
+                    print(self.portfolio.current_holdings)
                     exit_criteria = False
                     #ax.axvline(self.data.index[i], color='blue')
+
             self.recent_max_list.append(recent_max)
         self.data[symbol + '_stop_loss'] = pd.Series(self.stop_loss_list, index=self.data.index)
         self.data[symbol + '_recent_max'] = pd.Series(self.recent_max_list,index=self.data.index)
-        self.data[symbol + '_recent_max_minus_mrange'] = self.data[symbol + '_recent_max'] - self.data[symbol + '_mrange']
+        #self.data[symbol + '_recent_max_minus_mrange'] = self.data[symbol + '_recent_max'] - self.data[symbol + '_mrange']
 
-        order_history_df = pd.DataFrame(order_history, columns=['Purchase Date','Purchase Price','Sell Date','Sell Price','Stop Loss'])
+        order_history_df = pd.DataFrame(order_history, columns=['Purchase Date','Purchase Price','Sell Date','Sell Price','Stop Loss', 'Number of Shares','Total Cash Equity'])
         order_history_df['Symbol'] = symbol
         order_history_df['Profit_Loss_share'] = order_history_df['Sell Price'] - order_history_df['Purchase Price']
         order_history_df['Risk'] = order_history_df['Purchase Price'] - order_history_df['Stop Loss']
@@ -185,7 +191,7 @@ class StockData(object):
         self.calc_ma_stats(symbol, self.settings['near_ma'], self.settings['far_ma'])
         self.calc_ewma(symbol)
         self.calc_ewma_residuals(symbol)
-        output2 = self.calc_moving_range(symbol)
+        #output2 = self.calc_moving_range(symbol)
         self.trade(symbol, self.settings['near_ma'], self.settings['far_ma'])  # Updates order history
 
     def backtest(self, symbol_list=['MMM','ACT'], near_ma=10, far_ma=90, save=False):
@@ -229,7 +235,7 @@ class StockData(object):
     def calc_score(self,plot_histo=True):
         # symbol = self.sd.order_history_symbol
         if plot_histo and self.order_history.shape[0] >= 0:  # Need to have at least one row
-            plt.hist(self.symbol_order_history['Rmultiple'])
+            plt.hist(self.order_history['Rmultiple'])
         expectancy = self.order_history['Rmultiple'].mean()
         RstdDev = self.order_history['Rmultiple'].std()
         SQN = expectancy / RstdDev
@@ -252,9 +258,8 @@ if __name__ == "__main__":
     sd = StockData()
     symbol_list = sd.data.sample(5,axis=1).columns   # Take a random sample of x stocks to run the system on
     sd.backtest(symbol_list,10,60,save=True)
-    #sd.plot_results(symbol_list[[1,4]])
+    sd.plot_results(symbol_list[[1,4]])
     plt.hist(sd.order_history['Rmultiple'])
-
     print(sd.score)
 
     #myStockData.graph_data()
