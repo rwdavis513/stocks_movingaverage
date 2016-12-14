@@ -8,10 +8,15 @@ from portfolio import Portfolio
 class StockData(object):
 # I need to re-factor this code.
 
-    def __init__(self,stockdata_csv='rawdata/csv/allStocks.csv'):
+    def __init__(self, stockdata_csv='rawdata/csv/allStocks.csv'):
         self.data = pd.read_csv(stockdata_csv, index_col=0)
+        self.clean_column_names()
         self.data.set_index(pd.to_datetime(self.data.index), inplace=True)
         self.portfolio = Portfolio(100000, pct_equity_risk=0.01)
+
+    def clean_column_names(self):
+        self.data.columns = [colname[colname.find('.')+1:colname.find(' ')] for colname in self.data.columns]
+        print(self.data.columns)
 
     def graph_data(self,symbol='MMM'):
         fig = plt.figure()
@@ -194,7 +199,7 @@ class StockData(object):
         #output2 = self.calc_moving_range(symbol)
         self.trade(symbol, self.settings['near_ma'], self.settings['far_ma'])  # Updates order history
 
-    def backtest(self, symbol_list=['MMM','ACT'], near_ma=10, far_ma=90, save=False):
+    def backtest(self, symbol_list=['MMM', 'ACT'], near_ma=10, far_ma=90, save=False):
         self.symbol_list = symbol_list
         self.settings = {'near_ma': near_ma, 'far_ma': far_ma}
         for symbol in symbol_list:
@@ -222,6 +227,7 @@ class StockData(object):
             ax = self.data[[symbol, symbol + '_ma_' + str(near_ma),
                             symbol + '_ma_' + str(far_ma), symbol + '_stop_loss']].plot()
             symbol_order_history = self.order_history[self.order_history['Symbol']==symbol]
+            ax.set_ylabel('Price ($)')
             for row in symbol_order_history.iterrows():
                 try:
                     ax.axvline(row[1]['Purchase Date'], color='red', linewidth=2)
@@ -231,6 +237,8 @@ class StockData(object):
                     print(symbol_order_history)
 
             # fig = plt.figure()
+            plt.savefig('images/Stock Trends/' + symbol + '.png')
+            plt.close()
 
     def calc_score(self,plot_histo=True):
         # symbol = self.sd.order_history_symbol
@@ -254,11 +262,11 @@ class StockData(object):
         return self.score
 
 if __name__ == "__main__":
-
-    sd = StockData()
-    symbol_list = sd.data.sample(5,axis=1).columns   # Take a random sample of x stocks to run the system on
-    sd.backtest(symbol_list,10,60,save=True)
-    sd.plot_results(symbol_list[[1,4]])
+    csv = '/home/bob/Documents/AutoVid/datademistifier/rawdata/csv/all_stock_data.csv'
+    sd = StockData(csv)
+    symbol_list = sd.data.sample(30, axis=1).columns   # Take a random sample of x stocks to run the system on
+    sd.backtest(symbol_list, 10, 60, save=True)
+    sd.plot_results(symbol_list)
     plt.hist(sd.order_history['Rmultiple'])
     print(sd.score)
 
